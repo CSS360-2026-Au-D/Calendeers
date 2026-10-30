@@ -20,14 +20,17 @@
   "dependencies": {
     "ascii-table": "^0.0.9",
     "axios": "^0.27.2",
-    "discord.js": "^14.5.0"
+    "discord.js": "^14.27.0",
+    "node-cron": "^4.6.0",
+    "node-ical": "^0.27.3"
   },
   "devDependencies": {
     "chai": "^4.3.6",
-    "dotenv": "^16.0.2",
+    "dotenv": "^16.6.1",
     "esbuild": "^0.15.9",
     "esbuild-runner": "^2.2.1",
     "mocha": "^10.0.0",
     "nodemon": "^2.0.20"
-  }
+  },
+  "main": "bot.js"
 }
