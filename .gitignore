@@ -1,3 +1,7 @@
-node_modules
 .env
-build
+.env.*
+!.env.example
+node_modules/
+.venv/
+sent-reminders.json
+sent-reminders.json.tmp
