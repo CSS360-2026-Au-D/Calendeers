@@ -12,3 +12,4 @@ This bot is currently under development, should be released by end of 2026. Stay
 - `/classes` privately shows all classes from your saved Register.UW schedule, with meeting days, times, locations, and the number of unique classes.
 - `/schedule` shows upcoming calendar events, including assignments.
 - `/disconnect` removes your linked calendars and saved class schedule.
+- `/upcoming-assignments` shows your upcoming assignments (events) for the amount of days specified when running the command
