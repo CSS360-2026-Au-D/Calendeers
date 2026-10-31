@@ -4,7 +4,9 @@ import {
   TextInputBuilder,
   TextInputStyle,
   LabelBuilder,
-  FileUploadBuilder
+  FileUploadBuilder,
+  ActionRowBuilder,
+  StringSelectMenuBuilder
 } from "discord.js";
 
 import {
@@ -13,12 +15,16 @@ import {
   removeCalendar,
   saveSchedule,
   getSchedule,
-  removeSchedule
+  removeSchedule,
+  getCompletedAssignments,
+  markAssignmentsCompleted,
+  removeCompletedAssignments
 } from "../services/calendarStore";
 
 import {
   validateFeedURL,
-  getUpcomingEvents
+  getUpcomingEvents,
+  getMissingAssignments
 } from "../services/canvasFeed";
 
 import {
@@ -32,6 +38,70 @@ function safeText(value, maxLength = 100) {
   return String(value || "")
     .replace(/[\r\n`*_~|<>]/g, " ")
     .slice(0, maxLength);
+}
+
+// Discord caps messages at 2000 characters and select menus at 25 options.
+const MAX_MESSAGE_LENGTH = 1900;
+const MAX_MENU_OPTIONS = 25;
+
+export function formatMissingAssignments(assignments, lookbackDays, now = Date.now()) {
+  let content =
+    `⚠️ **You have ${assignments.length} missing ` +
+    `${assignments.length === 1 ? "assignment" : "assignments"} ` +
+    `(past ${lookbackDays} days)**\n\n`;
+  const footer =
+    "\n\nSubmit them on Canvas (late if allowed) or reach out to your " +
+    "professor. Already turned one in? Pick it below to mark it done.";
+
+  let shown = 0;
+
+  for (const item of assignments) {
+    const daysLate = Math.max(1, Math.floor((now - item.due) / 86400000));
+    const due = item.allDay
+      ? new Date(item.due).toLocaleDateString("en-US", {
+          timeZone: "UTC",
+          month: "short",
+          day: "numeric"
+        }) + " (all day)"
+      : `<t:${Math.floor(item.due / 1000)}:f>`;
+    const block =
+      `📕 **${safeText(item.title)}**\n` +
+      `🕒 Due ${due} · ${daysLate} ${daysLate === 1 ? "day" : "days"} late` +
+      (item.url ? `\n🔗 <${item.url}>` : "") +
+      "\n\n";
+
+    const remaining = assignments.length - shown - 1;
+    const moreNote = remaining > 0 ? `…and ${remaining} more` : "";
+
+    if (content.length + block.length + footer.length + moreNote.length > MAX_MESSAGE_LENGTH) {
+      break;
+    }
+
+    content += block;
+    shown += 1;
+  }
+
+  if (shown < assignments.length) {
+    content += `…and ${assignments.length - shown} more`;
+  }
+
+  return content.trimEnd() + footer;
+}
+
+function buildMarkDoneMenu(assignments) {
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId("missing_mark_done")
+    .setPlaceholder("Mark assignments as done")
+    .setMinValues(1);
+
+  const options = assignments.slice(0, MAX_MENU_OPTIONS).map(item => ({
+    label: safeText(item.title) || "Untitled assignment",
+    value: item.id.slice(0, 100)
+  }));
+
+  menu.addOptions(options).setMaxValues(options.length);
+
+  return new ActionRowBuilder().addComponents(menu);
 }
 
 const event = {
@@ -81,6 +151,7 @@ const event = {
       if (command === "disconnect") {
         const removedCalendar = removeCalendar(interaction.user.id);
         const removedSchedule = removeSchedule(interaction.user.id);
+        removeCompletedAssignments(interaction.user.id);
         const removed = removedCalendar || removedSchedule;
 
         await interaction.reply({
@@ -232,6 +303,49 @@ const event = {
         return;
       }
 
+      if (command === "missing") {
+        await interaction.deferReply({ ephemeral: true });
+
+        try {
+          const lookbackDays =
+            interaction.options.getInteger("days") ?? 14;
+          const url = getCalendar(interaction.user.id);
+
+          if (!url) {
+            await interaction.editReply(
+              "Please use `/connect` first."
+            );
+            return;
+          }
+
+          const missing = await getMissingAssignments(url, {
+            lookbackDays,
+            completedIds: getCompletedAssignments(interaction.user.id)
+          });
+
+          if (missing.length === 0) {
+            await interaction.editReply(
+              `🎉 No missing assignments in the past ${lookbackDays} days!`
+            );
+            return;
+          }
+
+          await interaction.editReply({
+            content: formatMissingAssignments(missing, lookbackDays),
+            components: [buildMarkDoneMenu(missing)],
+            allowedMentions: { parse: [] }
+          });
+
+        } catch (error) {
+          console.error("Failed to load missing assignments:", error);
+          await interaction.editReply(
+            "Unable to check your missing assignments. " +
+            "Please check your Canvas connection."
+          );
+        }
+
+        return;
+      }
 
       if (command === "classes") {
         await interaction.deferReply({ ephemeral: true });
@@ -262,6 +376,31 @@ const event = {
 
         return;
       }
+    }
+
+    // Handle "mark as done" picks from the /missing reply.
+    if (
+      interaction.isStringSelectMenu() &&
+      interaction.customId === "missing_mark_done"
+    ) {
+      try {
+        markAssignmentsCompleted(interaction.user.id, interaction.values);
+
+        await interaction.update({
+          content:
+            `✅ Marked ${interaction.values.length} ` +
+            `${interaction.values.length === 1 ? "assignment" : "assignments"} ` +
+            "as done. Run `/missing` again to see what's left.",
+          components: []
+        });
+      } catch (error) {
+        console.error("Failed to mark assignments done:", error);
+        await interaction.reply({
+          content: "Unable to save that. Please try again.",
+          ephemeral: true
+        });
+      }
+      return;
     }
 
     // Handle the private /connect form submission.
