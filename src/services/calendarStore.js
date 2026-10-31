@@ -13,7 +13,7 @@ function getKey() {
     const hex = process.env.CALENDAR_ENCRYPTION_KEY || "";
 
     if (!/^[a-f0-9]{64}$/i.test(hex)) {
-        throw new Error("Invalid CALENDAR_ENCRYTION_KEY");
+        throw new Error("Invalid CALENDAR_ENCRYPTION_KEY");
     }
     return Buffer.from(hex, "hex");
 }

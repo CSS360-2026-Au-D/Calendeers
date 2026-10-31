@@ -153,6 +153,86 @@ const event = {
         return;
       }
 
+      if (command === "upcoming-assignments") {
+        await interaction.deferReply({ ephemeral: true });
+
+        try {
+            const numberOfDays =
+                interaction.options.getInteger("number-of-days");
+
+            if (!Number.isInteger(numberOfDays) ||
+                numberOfDays < 1 ||
+                numberOfDays > 30) {
+
+                await interaction.editReply(
+                    "Please enter a number between 1 and 30."
+                );
+                return;
+            }
+
+            const url = getCalendar(interaction.user.id);
+
+            if (!url) {
+                await interaction.editReply(
+                    "Please use `/connect` first."
+                );
+                return;
+            }
+
+            const events = await getUpcomingEvents(url, {
+                numberOfDays
+            });
+
+            if (events.length === 0) {
+                await interaction.editReply(
+                    `📅 No upcoming assignments or events found ` +
+                    `within the next ${numberOfDays} days.`
+                );
+                return;
+            }
+
+            const lines = events.map(item => {
+                const date = item.allDay
+                    ? new Date(item.start).toLocaleDateString(
+                        "en-US",
+                        {
+                            timeZone: "UTC",
+                            month: "short",
+                            day: "numeric"
+                        }
+                    ) + " (all day)"
+                    : `<t:${Math.floor(item.start / 1000)}:f>`;
+
+                return (
+                    `📚 **${safeText(item.title)}**\n` +
+                    `🕒 ${date}\n` +
+                    (item.location
+                        ? `📍 ${safeText(item.location, 60)}`
+                        : "")
+                );
+            });
+
+            await interaction.editReply({
+                content:
+                    `🦌 **Your Upcoming Assignments ` +
+                    `(Next ${numberOfDays} Days)**\n\n` +
+                    lines.join("\n\n"),
+                allowedMentions: { parse: [] }
+            });
+
+        } catch (error) {
+            console.error("Failed to load upcoming assignments:", error);
+
+            await interaction.editReply(
+                "Unable to retrieve your upcoming assignments. " +
+                "Please check your Canvas connection."
+            );
+        }
+
+        return;
+      }
+
+
       if (command === "classes") {
         await interaction.deferReply({ ephemeral: true });
 

@@ -32,7 +32,22 @@ const event = {
         {
           name: "ping",
           description: "Check whether Calendeers is online"
-        }
+        },
+        {
+          name: "upcoming-assignments",
+          description: "View upcoming Canvas assignments",
+          options: [
+              {
+                  name: "number-of-days",
+                  description: "Number of days to look ahead",
+                  type: 4, //Discord option type 4 represents an integer
+                  required: true,
+                  min_value: 1,
+                  max_value: 30
+              }
+          ]
+        },
+
       ];
 
       for (const command of commands) {
