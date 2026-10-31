@@ -13,3 +13,4 @@ This bot is currently under development, should be released by end of 2026. Stay
 - `/schedule` shows upcoming calendar events, including assignments.
 - `/disconnect` removes your linked calendars and saved class schedule.
 - `/upcoming-assignments` shows your upcoming assignments (events) for the amount of days specified when running the command
+- `/missing [days]` privately lists Canvas assignments that are past due (in the last 14 days by default, up to 120) with a link and how late each one is. Canvas calendar feeds don't include submission status, so use the menu under the list to mark assignments you've already turned in as done and they won't show up again.

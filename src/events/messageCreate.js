@@ -19,6 +19,7 @@ Shows this help message.
 📌 **Other Features**
 • Welcome Message - Welcomes new members to the server.
 • Assignment Reminder - Reminds students about upcoming assignments.
+• Missing Assignments - Use \`/missing\` to see past-due assignments you haven't marked done.
 `;
 
     await message.reply(helpMessage);
