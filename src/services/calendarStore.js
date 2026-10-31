@@ -8,6 +8,7 @@ import {
 
 const FILE = path.resolve("data/calendar-links.json");
 const SCHEDULE_FILE = path.resolve("data/class-schedules.json");
+const COMPLETED_FILE = path.resolve("data/completed-assignments.json");
 
 function getKey() {
     const hex = process.env.CALENDAR_ENCRYPTION_KEY || "";
@@ -97,6 +98,25 @@ export function getSchedule(userId) {
 
 export function removeSchedule(userId) {
     return removeRecord(SCHEDULE_FILE, userId);
+}
+
+// Canvas assignment UIDs the user has marked done; not sensitive, so stored as-is.
+export function getCompletedAssignments(userId) {
+    return readDatabase(COMPLETED_FILE)[userId] || [];
+}
+
+export function markAssignmentsCompleted(userId, assignmentIds) {
+    const database = readDatabase(COMPLETED_FILE);
+    const completed = new Set(database[userId] || []);
+
+    for (const id of assignmentIds) completed.add(id);
+
+    database[userId] = [...completed];
+    saveDatabase(COMPLETED_FILE, database);
+}
+
+export function removeCompletedAssignments(userId) {
+    return removeRecord(COMPLETED_FILE, userId);
 }
 
 function removeRecord(file, userId) {
