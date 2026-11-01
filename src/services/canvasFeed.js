@@ -44,7 +44,90 @@ function getTomorrowDateKey(now) {
     return tomorrow.toISOString().slice(0, 10);
 }
 
-async function fetchCalendar(feedURL) {
+export async function getUpcomingEvents(
+    feedURL,
+    { excludeAssignments = false,
+         tomorrowOnly = false, 
+         numberOfDays = 14,
+        } = {}
+) {
+    const response = await axios.get(feedURL, {
+        responseType: "text",
+        timeout: 10000,
+        maxRedirects: 0,
+        maxContentLength: 1024 * 1024,
+        headers: { Accept: "text/calendar" }
+    });
+
+    const text = response.data;
+
+    if (typeof text !== "string" || !text.includes("BEGIN:VCALENDAR")) {
+        throw new Error("Invalid calendar feed");
+    }
+
+    const calendar = ical.sync.parseICS(text);
+
+    const now = new Date();
+    
+    if (!Number.isInteger(numberOfDays) || numberOfDays < 1) {
+        throw new Error("numberOfDays must be a positive integer");
+    }
+    const end = new Date(
+        now.getTime() + numberOfDays * 86400000
+    );
+
+    const tomorrowDateKey = tomorrowOnly ? getTomorrowDateKey(now) : null;
+    const upcoming = [];
+
+    for (const event of Object.values(calendar)) {
+        if (event.type !== "VEVENT" || !event.start) continue;
+
+        const title = String(event.summary || "");
+        const eventURL = String(event.url || "");
+        const isAssignment =
+            /^assignment\s*:/i.test(title) ||
+            /\/(?:assignments|quizzes)\//i.test(eventURL);
+
+        if (excludeAssignments && isAssignment) continue;
+
+        const occurrences = event.rrule ? ical.expandRecurringEvent(event, {
+            from: now,
+            to: end
+        }) : [event];
+
+        for (const occurrence of occurrences) {
+            const start = occurrence.start || event.start;
+            const timestamp = new Date(start).getTime();
+
+            if (timestamp < now.getTime() || timestamp > end.getTime()) continue;
+
+            const allDay = Boolean(occurrence.isFullDay || start.dateOnly);
+            if (
+                tomorrowOnly &&
+                getDateKey(
+                    new Date(timestamp),
+                    allDay ? "UTC" : "America/Los_Angeles"
+                ) !== tomorrowDateKey
+            ) {
+                continue;
+            }
+
+            upcoming.push({
+                title: occurrence.summary || event.summary || "Untitled event",
+                location: occurrence.location || event.location || "",
+                start: timestamp,
+                allDay
+            });
+        }
+    }
+
+    const sorted = upcoming.sort((a, b) => a.start - b.start);
+    return tomorrowOnly ? sorted : sorted;
+}
+
+// --- Missing assignments ---
+
+async function fetchMissingAssignmentsCalendar(feedURL) {
     const response = await axios.get(feedURL, {
         responseType: "text",
         timeout: 10000,
@@ -127,67 +210,6 @@ export function findMissingAssignments(
 }
 
 export async function getMissingAssignments(feedURL, options = {}) {
-    const calendar = await fetchCalendar(feedURL);
+    const calendar = await fetchMissingAssignmentsCalendar(feedURL);
     return findMissingAssignments(calendar, options);
-}
-
-export async function getUpcomingEvents(
-    feedURL,
-    { excludeAssignments = false,
-         tomorrowOnly = false,
-         numberOfDays = 14,
-        } = {}
-) {
-    const calendar = await fetchCalendar(feedURL);
-
-    const now = new Date();
-    
-    if (!Number.isInteger(numberOfDays) || numberOfDays < 1) {
-        throw new Error("numberOfDays must be a positive integer");
-    }
-    const end = new Date(
-        now.getTime() + numberOfDays * 86400000
-    );
-
-    const tomorrowDateKey = tomorrowOnly ? getTomorrowDateKey(now) : null;
-    const upcoming = [];
-
-    for (const event of Object.values(calendar)) {
-        if (event.type !== "VEVENT" || !event.start) continue;
-
-        if (excludeAssignments && isAssignmentEvent(event)) continue;
-
-        const occurrences = event.rrule ? ical.expandRecurringEvent(event, {
-            from: now,
-            to: end
-        }) : [event];
-
-        for (const occurrence of occurrences) {
-            const start = occurrence.start || event.start;
-            const timestamp = new Date(start).getTime();
-
-            if (timestamp < now.getTime() || timestamp > end.getTime()) continue;
-
-            const allDay = Boolean(occurrence.isFullDay || start.dateOnly);
-            if (
-                tomorrowOnly &&
-                getDateKey(
-                    new Date(timestamp),
-                    allDay ? "UTC" : "America/Los_Angeles"
-                ) !== tomorrowDateKey
-            ) {
-                continue;
-            }
-
-            upcoming.push({
-                title: occurrence.summary || event.summary || "Untitled event",
-                location: occurrence.location || event.location || "",
-                start: timestamp,
-                allDay
-            });
-        }
-    }
-
-    const sorted = upcoming.sort((a, b) => a.start - b.start);
-    return tomorrowOnly ? sorted : sorted;
 }

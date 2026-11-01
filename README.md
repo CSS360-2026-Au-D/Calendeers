@@ -4,7 +4,7 @@
 
 Have your personal assistant in your discord server to remind what assignments need to be complited and customize the bot based on your own work pace!
 
-**Current version: 1.0** — connect your UW Canvas calendar and Register.UW schedule, then check your classes, upcoming assignments, and missing assignments right from Discord.
+This bot is currently under development, should be released by end of 2026. Stay tune!
 
 ## Calendar commands
 

@@ -1,7 +1,7 @@
 {
-  "name": "calendeers",
+  "name": "memebot_discord",
   "version": "1.0.0",
-  "description": "Calendeers: a Discord bot that shows UW students their classes, upcoming assignments, and missing assignments from Canvas",
+  "description": "this is a demo project for teaching how to build a discord bot",
   "scripts": {
     "build": "rm -rf build && esbuild src/*.js src/**/*.js --platform=node --format=cjs  --outdir=build --outbase=src",
     "start": "npm run build && node -r dotenv/config build/app.js",
