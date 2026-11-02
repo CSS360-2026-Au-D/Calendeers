@@ -124,3 +124,92 @@ export async function getUpcomingEvents(
     const sorted = upcoming.sort((a, b) => a.start - b.start);
     return tomorrowOnly ? sorted : sorted;
 }
+
+// --- Missing assignments ---
+
+async function fetchMissingAssignmentsCalendar(feedURL) {
+    const response = await axios.get(feedURL, {
+        responseType: "text",
+        timeout: 10000,
+        maxRedirects: 0,
+        maxContentLength: 1024 * 1024,
+        headers: { Accept: "text/calendar" }
+    });
+
+    const text = response.data;
+
+    if (typeof text !== "string" || !text.includes("BEGIN:VCALENDAR")) {
+        throw new Error("Invalid calendar feed");
+    }
+
+    return ical.sync.parseICS(text);
+}
+
+function isAssignmentEvent(event) {
+    const title = String(event.summary || "");
+    const eventURL = String(event.url || "");
+
+    return (
+        /^assignment\s*:/i.test(title) ||
+        /\/(?:assignments|quizzes)\//i.test(eventURL)
+    );
+}
+
+// Only link back to Canvas itself, never to an arbitrary URL from the feed.
+function getCanvasURL(event) {
+    try {
+        const url = new URL(String(event.url || ""));
+        return url.protocol === "https:" && url.hostname === "canvas.uw.edu"
+            ? url.toString()
+            : "";
+    } catch {
+        return "";
+    }
+}
+
+// A Canvas .ics feed has due dates but no submission status, so an
+// assignment counts as missing once its due date has passed and the user
+// has not marked it done.
+export function findMissingAssignments(
+    calendar,
+    { now = new Date(), completedIds = [], lookbackDays = 14 } = {}
+) {
+    if (!Number.isInteger(lookbackDays) || lookbackDays < 1) {
+        throw new Error("lookbackDays must be a positive integer");
+    }
+
+    const completed = new Set(completedIds);
+    const start = now.getTime() - lookbackDays * 86400000;
+    const missing = [];
+
+    for (const event of Object.values(calendar)) {
+        if (event.type !== "VEVENT" || !event.start) continue;
+        if (!isAssignmentEvent(event)) continue;
+
+        const id = String(event.uid || "");
+        if (!id || completed.has(id)) continue;
+
+        const allDay = Boolean(event.start.dateOnly);
+        const dueTimestamp = new Date(event.start).getTime();
+        // An all-day assignment is not missing until that whole day is over.
+        const deadline = allDay ? dueTimestamp + 86400000 : dueTimestamp;
+
+        if (deadline >= now.getTime() || deadline < start) continue;
+
+        missing.push({
+            id,
+            title: String(event.summary || "Untitled assignment")
+                .replace(/^assignment\s*:\s*/i, ""),
+            url: getCanvasURL(event),
+            due: dueTimestamp,
+            allDay
+        });
+    }
+
+    return missing.sort((a, b) => a.due - b.due);
+}
+
+export async function getMissingAssignments(feedURL, options = {}) {
+    const calendar = await fetchMissingAssignmentsCalendar(feedURL);
+    return findMissingAssignments(calendar, options);
+}

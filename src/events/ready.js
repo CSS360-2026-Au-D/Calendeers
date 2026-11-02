@@ -47,6 +47,20 @@ const event = {
               }
           ]
         },
+        {
+          name: "missing",
+          description: "View past-due Canvas assignments you haven't marked done",
+          options: [
+              {
+                  name: "days",
+                  description: "How many days back to check (default 14)",
+                  type: 4, //Discord option type 4 represents an integer
+                  required: false,
+                  min_value: 1,
+                  max_value: 120
+              }
+          ]
+        },
 
       ];
 
