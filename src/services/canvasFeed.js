@@ -86,7 +86,9 @@ export async function getUpcomingEvents(
         const eventURL = String(event.url || "");
         const isAssignment =
             /^assignment\s*:/i.test(title) ||
-            /\/(?:assignments|quizzes)\//i.test(eventURL);
+            /\/(?:assignments|quizzes)\//i.test(eventURL) ||
+            /^event-(?:assignment|sub-assignment|quiz)(?:-|$)/i.test(uid) ||
+            /#(?:assignment|assignment_override|sub_assignment|quiz)_\d+/i.test(eventURL);
 
         if (excludeAssignments && isAssignment) continue;
 
@@ -145,15 +147,30 @@ async function fetchMissingAssignmentsCalendar(feedURL) {
     return ical.sync.parseICS(text);
 }
 
-function isAssignmentEvent(event) {
+// function isAssignmentEvent(event) {
+//     const title = String(event.summary || "");
+//     const eventURL = String(event.url || "");
+
+//     return (
+//         /^assignment\s*:/i.test(title) ||
+//         /\/(?:assignments|quizzes)\//i.test(eventURL)
+//     );
+// }
+
+
+    function isAssignmentEvent(event) {
     const title = String(event.summary || "");
-    const eventURL = String(event.url || "");
+    const url = String(event.url || "");
+    const description = String(event.description || "");
+    const uid = String(event.uid || "");
 
     return (
         /^assignment\s*:/i.test(title) ||
-        /\/(?:assignments|quizzes)\//i.test(eventURL)
+        /\/(?:assignments|quizzes)\//i.test(url) ||
+        /\/(?:assignments|quizzes)\//i.test(description) ||
+        /(?:^|[-_])(?:assignment|quiz|sub-assignment)(?:[-_@.]|$)/i.test(uid)
     );
-}
+    }
 
 // Only link back to Canvas itself, never to an arbitrary URL from the feed.
 function getCanvasURL(event) {
@@ -212,4 +229,118 @@ export function findMissingAssignments(
 export async function getMissingAssignments(feedURL, options = {}) {
     const calendar = await fetchMissingAssignmentsCalendar(feedURL);
     return findMissingAssignments(calendar, options);
+}
+
+
+/**
+ * Return a calendar date using the bot's
+ * local timezone, in YYYY-MM-DD format.
+ */
+function getLocalDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * All-day calendar events have date-only values.
+ * Preserve their calendar date without converting
+ * it to the bot's local timezone.
+ */
+function getUTCDateKey(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Find assignments due exactly 1 or 3
+ * calendar days from today.
+ */
+export function findDueReminders(
+  calendar,
+  { now = new Date(), completedIds = [] } = {}
+) {
+  const completed = new Set(completedIds);
+
+  // Calculate target dates using local calendar days.
+  const targetDates = new Map();
+
+  for (const days of [1, 2, 3]) {
+    const target = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + days
+    );
+
+    targetDates.set(getLocalDateKey(target), days);
+  }
+
+  const reminders = [];
+
+  for (const event of Object.values(calendar)) {
+    if (event.type !== "VEVENT" || !event.start) {
+      continue;
+    }
+
+    
+    if (!isAssignmentEvent(event)) {
+    continue;
+}
+
+
+    const id = String(event.uid || "");
+
+    if (!id || completed.has(id)) {
+      continue;
+    }
+
+    const dueDate = new Date(event.start);
+
+    if (Number.isNaN(dueDate.getTime())) {
+      continue;
+    }
+
+    const allDay = Boolean(
+      event.isFullDay || event.start.dateOnly
+    );
+
+    const dateKey = allDay
+      ? getUTCDateKey(dueDate)
+      : getLocalDateKey(dueDate);
+
+    const daysBefore = targetDates.get(dateKey);
+
+    // Ignore anything not due in 1 or 3 days.
+    if (daysBefore === undefined) {
+      continue;
+    }
+
+    reminders.push({
+      id,
+      title: String(
+        event.summary || "Untitled assignment"
+      ).replace(/^assignment\s*:\s*/i, ""),
+      url: getCanvasURL(event),
+      due: dueDate.getTime(),
+      allDay,
+      daysBefore
+    });
+  }
+
+  return reminders.sort((a, b) => a.due - b.due);
+}
+
+/**
+ * Download the student's Canvas calendar
+ * and return their qualifying assignments.
+ */
+export async function getDueReminders(
+  feedURL,
+  options = {}
+) {
+  const calendar =
+    await fetchMissingAssignmentsCalendar(feedURL);
+
+  return findDueReminders(calendar, options);
 }
