@@ -34,6 +34,15 @@ The logic of tomorrowOnly function in canvasFeed returns the same result regardl
 
 **Summary:** These are maintainability concerns rather than confirmed runtime bugs. Refactoring would improve readability, testability, and future feature development.
 
+**File analyzed:** `src/events/interactionCreate.js`
+
+**Finding 5: Parser can't differentiate between assignments and classes**
+The /upcoming-assignments function cannot properly differentiate between assignments and upcoming classes. It only looks for upcoming events and displays all of them without sorting them properly.
+
+**Recommendation:** Add a the ability for our bot to sort between classes and assignments when parsing calendar events.
+
+**Summary:** These are functional issues, and would benefit the end user if fixed. They do not affect the ability for our bot to run, but will affect user experience if not fixed. An issue has been made for this problem.
+
 
 ## 2. Cyclomatic Complexity
 
@@ -191,5 +200,118 @@ Overall, the 27 new unit tests improve confidence in Calendeers' Canvas URL vali
 - Fuzzer test is recommended to be implemented across this project to reduce the risk of mis-use and to prevent bugs.
 - Limited URL Variations; Only 3 types of links are generated for this test. More variations can be generated to further test the filtering function.
 - The fuzzer only tests validateFeedURL(). It does not test whether canvasFeed.js can safely handle corrupted, incomplete, or malicious .ics calendar data.
+
+## 8. Smoke Testing
+
+**Objective:** Implement automated smoke tests to verify that the core functionality of Calendeers continues to work as expected, particularly calendar processing and Discord command interactions.
+
+**Implementation:** Created two smoke-test files under `tests/smoke/` using the existing Mocha and Chai testing frameworks.
+
+**calendar.spec.js:**
+
+ - Tests Canvas calendar URL validation.
+ - Tests Register.UW .ics calendar parsing.
+ - Verifies course and event information extraction.
+ - Tests recurring class schedules.
+ - Verifies calendar data formatting.
+ - Tests handling of invalid calendar data.
+ - Tests overdue assignment identification.
+
+**commands.spec.js:**
+
+ - Tests all seven Discord slash commands.
+ - Verifies expected command responses.
+ - Tests command input validation and error handling.
+ - Tests behavior when users have not connected their calendars.
+ - Tests `/connect` modal creation and submission.
+ - Tests `/missing` assignment completion menu interactions.
+
+**Testing Methodology:**
+
+ - Mocked Discord interactions to simulate user commands without requiring a live Discord connection.
+ - Synthetic Discord user IDs used to isolate test data.
+ - Existing application functions tested without requiring significant modifications to the bot's implementation.
+ - Tests can be executed independently using `npm run test:smoke`.
+
+**Result:** A dedicated smoke-testing suite was established to verify the bot's primary calendar-processing and Discord interaction functionality. This provides an additional layer of automated testing beyond the existing unit tests.
+
+**Impact on Reliability:**
+
+ - Helps identify regressions in calendar parsing and command handling.
+ - Verifies that important Discord interactions continue to function correctly.
+ - Reduces the need for repetitive manual testing.
+ - Provides a foundation for expanding automated testing as new features are introduced.
+
+**Key Findings — Smoke Testing:** The smoke tests provide coverage of the bot's primary user-facing functionality without requiring a live Discord environment. Using mocked interactions also allows tests to execute independently of Discord authentication and external services.
+
+**Testing Gaps & Future Recommendations:**
+
+ - Additional storage and encryption tests could improve confidence in persistent user data handling.
+ - Integration tests could verify complete calendar connection workflows.
+ - Live Discord testing using a dedicated test bot could verify interactions with the Discord API.
+ - Additional edge-case testing could improve coverage of malformed calendar data and unexpected user inputs.
+
+
+## 9. Continuous Integration and Continuous Deployment
+
+**Objective:** Implement an automated Continuous Integration (CI) pipeline to execute smoke tests whenever changes are pushed to the repository or pull requests are created. Establish a foundation for future Continuous Deployment (CD).
+
+**Implementation:** Created `.github/workflows/ci.yml` using GitHub Actions to automate the testing process.
+
+**Workflow Configuration:**
+
+ - Triggers automatically when code is pushed to the main or develop branches.
+ - Triggers automatically when pull requests target either branch.
+ - Checks out the repository using GitHub Actions.
+ - Installs the required Node.js version and project dependencies.
+ - Uses npm ci to install dependencies consistently.
+ - Executes the smoke-testing suite using `npm run test:smoke`.
+
+**Node.js Compatibility Testing:**
+
+Configured a Node.js version matrix to execute the smoke tests across multiple runtime versions:
+
+ - Node.js 18.16.0 — Original development environment.
+ - Node.js 22 — Newer LTS version.
+ - Node.js 24 — Newer LTS version.
+ - Node.js 26 — Current LTS version.
+
+Separate GitHub Actions jobs are created for each Node.js version. This allows compatibility issues to be identified independently and helps determine which Node.js version should be used for future development and deployment.
+
+**Result:** An automated CI workflow was established using GitHub Actions. Smoke tests can now be executed automatically when changes are pushed or pull requests are opened, providing developers with feedback about potential regressions.
+
+**Impact on Development Workflow:**
+
+ - Reduces reliance on manually executing smoke tests.
+ - Provides consistent automated testing across multiple Node.js versions.
+ - Helps identify compatibility issues before changes are merged.
+ - Improves confidence when introducing new features or modifying existing functionality.
+ - Establishes a foundation for requiring successful CI checks before merging pull requests.
+
+**Continuous Deployment (Future Implementation):**
+
+Continuous Deployment has not yet been implemented because Calendeers currently runs within GitHub Codespaces for development and testing rather than a permanent hosting environment.
+
+Once a hosting provider has been selected, CD could be introduced through GitHub Actions.
+
+Potential future functionality includes:
+
+ - Automatically deploying changes after successful CI checks.
+ - Securely managing deployment credentials using GitHub Secrets.
+ - Automatically restarting the bot following deployment.
+ - Verifying that the deployed bot successfully starts and connects to Discord.
+
+**Key Findings — CI/CD:**
+
+The implementation of GitHub Actions provides an automated and repeatable testing process that improves the reliability of the development workflow. The Node.js version matrix also provides a way to evaluate runtime compatibility before selecting a version for future deployment.
+
+Although Continuous Deployment remains future work, the existing CI pipeline provides the foundation needed to introduce automated deployment once a permanent hosting environment is established.
+
+**Testing Gaps & Future Recommendations:**
+
+ - Review CI results to determine the most appropriate supported Node.js version for Calendeers.
+ - Configure GitHub branch protection to require successful CI checks before merging pull requests.
+ - Introduce Continuous Deployment once a permanent hosting environment is available.
+ - Add automated deployment health checks to verify successful bot restarts and Discord connections.
 ---
 
