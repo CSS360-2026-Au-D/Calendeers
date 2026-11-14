@@ -9,7 +9,8 @@
     "dev": "nodemon",
     "prod": "node build/app.js",
     "test": "mocha -r esbuild-runner/register ./tests/*.spec.js --exit",
-    "test:coverage": "node scripts/coverage.mjs"
+    "test:coverage": "node scripts/coverage.mjs", 
+    "test:smoke": "mocha -r esbuild-runner/register \"tests/smoke/**/*.spec.js\" --exit"
   },
   "keywords": [
     "discord",
