@@ -1,3 +1,39 @@
+import { sendAssignmentReminders } from "../services/reminderJob";
+
+
+/**
+ * Schedule assignment reminders for 0:00 AM
+ * using the bot machine's local timezone.
+ */
+function scheduleDailyReminders(client) {
+  const now = new Date();
+  const nextRun = new Date(now);
+
+  // Set next run to 0:00 AM local time
+  nextRun.setHours(0, 0, 0, 0);
+
+  // If time has already passed, schedule tomorrow
+  if (nextRun <= now) {
+    nextRun.setDate(nextRun.getDate() + 1);
+  }
+
+  const delay = nextRun.getTime() - now.getTime();
+
+  setTimeout(async () => {
+    try {
+      await sendAssignmentReminders(client)
+    } catch (error) {
+      console.error(
+        "Assignment reminder job failed:",
+        error
+      );
+    } finally {
+      // Schedule the next day's 8 AM check
+      scheduleDailyReminders(client);
+    }
+  }, delay);
+}
+
 const event = {
   name: "ready",
   once: true,
@@ -70,6 +106,8 @@ const event = {
 
       console.log(`Registered /ping in ${guild.name}`);
     }
+    // Start automatic daily assignment reminders
+    scheduleDailyReminders(client);
   },
 };
 

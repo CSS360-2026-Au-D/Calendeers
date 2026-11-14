@@ -130,3 +130,12 @@ function removeRecord(file, userId) {
 
     return existed;
 }
+
+/**
+ * Return the Discord IDs of students
+ * who have connected their Canvas calendars.
+ */
+export function getConnectedUserIds() {
+  const database = readDatabase(FILE);
+  return Object.keys(database);
+}
