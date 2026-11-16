@@ -1,0 +1,35 @@
+
+src/app.js
+   5:15  error  'process' is not defined    no-undef
+  18:30  error  '__dirname' is not defined  no-undef
+
+src/events/guildMemberAdd.js
+   3:22  error  'process' is not defined                                        no-undef
+   4:18  error  'process' is not defined                                        no-undef
+  34:7   error  'getWelcomeMessageWithMeme' is assigned a value but never used  no-unused-vars
+
+src/helpers/loadEvents.js
+  12:19  error  'require' is not defined  no-undef
+
+src/services/calendarStore.js
+  14:17  error  'process' is not defined  no-undef
+  19:12  error  'Buffer' is not defined   no-undef
+  46:23  error  'Buffer' is not defined   no-undef
+  62:9   error  'Buffer' is not defined   no-undef
+  65:25  error  'Buffer' is not defined   no-undef
+  67:12  error  'Buffer' is not defined   no-undef
+  68:25  error  'Buffer' is not defined   no-undef
+
+tests/missingAssignments.spec.js
+   63:1  error  'describe' is not defined  no-undef
+   66:3  error  'it' is not defined        no-undef
+   76:3  error  'it' is not defined        no-undef
+   84:3  error  'it' is not defined        no-undef
+   93:3  error  'it' is not defined        no-undef
+  102:3  error  'it' is not defined        no-undef
+  111:3  error  'it' is not defined        no-undef
+  116:1  error  'describe' is not defined  no-undef
+  117:3  error  'it' is not defined        no-undef
+  129:3  error  'it' is not defined        no-undef
+
+✖ 23 problems (23 errors, 0 warnings)

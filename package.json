@@ -9,8 +9,9 @@
     "dev": "nodemon",
     "prod": "node build/app.js",
     "test": "mocha -r esbuild-runner/register ./tests/*.spec.js --exit",
-    "test:coverage": "node scripts/coverage.mjs", 
-    "test:smoke": "mocha -r esbuild-runner/register \"tests/smoke/**/*.spec.js\" --exit"
+    "test:coverage": "node scripts/coverage.mjs",
+    "test:smoke": "mocha -r esbuild-runner/register \"tests/smoke/**/*.spec.js\" --exit",
+    "lint": "eslint ."
   },
   "keywords": [
     "discord",
@@ -27,12 +28,15 @@
     "node-ical": "^0.25.6"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "c8": "^12.0.0",
     "chai": "^4.3.6",
     "dotenv": "^16.0.2",
     "esbuild": "^0.28.2",
     "esbuild-runner": "^2.2.1",
+    "eslint": "^10.14.0",
     "fast-check": "^4.10.2",
+    "globals": "^17.14.0",
     "mocha": "^10.0.0",
     "nodemon": "^3.1.14"
   }

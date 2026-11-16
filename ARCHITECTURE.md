@@ -362,8 +362,6 @@ classDiagram
         +String name
         +execute(member, client)
         +getWelcomeMessage(userId)
-        +getWelcomeMessageWithMeme(userId)
-        +getMeme()
     }
 
     class Ready {
