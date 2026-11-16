@@ -91,6 +91,14 @@ Both commands add every event to a single message with no length limit. With 15 
 CI (`ci.yml`) only runs `npm run test:smoke`. The 52 unit tests in `tests/*.spec.js`, including the `/missing` regression tests, and ESLint only run when someone remembers to run them by hand. Also, `npm run test:coverage` fails on Windows with `spawn npx ENOENT`, because `scripts/coverage.mjs` starts `npx` without a shell.
 
 **Recommendation:** Add an `npm test` step to `ci.yml`, and a `npm run lint` step on one Node version of 22 or later (ESLint 10 does not support the Node 18.16.0 entry in the CI matrix). Spawn with `shell: true` (or call c8 through Node) in `coverage.mjs`.
+**Finding 13: `npm start` no longer starts the bot**
+Since PR #44 (merged Nov 13), `package.json` has `"type": "module"`. The build script still compiles `src/` to CommonJS in `build/`, so Node now loads `build/app.js` as an ES module and stops at the first line: `ReferenceError: require is not defined in ES module scope`. The same happens to anyone who restarts the shared bot from `main`.
+
+Telling Node that `build/` is CommonJS is not enough on its own. With `"type": "module"`, esbuild also changes how it compiles the re-exports in `helpers/index.js`, so `loadEvents` becomes an object (`{ default }`) and `app.js` would fail next with "loadEvents is not a function". Removing the line fixes both problems. I checked this locally: all unit, smoke and fuzz tests, ESLint and coverage still pass, and the built bot loads every event handler and reaches `client.login()` (stubbed, so it did not connect). The fuzzer then prints a module-type warning on Node 24, and would not run at all on Node 18.
+
+CI did not catch this because it only runs the smoke tests through esbuild-runner. It never runs `npm run build` or loads the built bot.
+
+**Recommendation:** Remove `"type": "module"` and rename `src/fuzz/fuzz-test.js` to `.mjs`, or move the whole project to native ES modules and drop the CommonJS build (see Finding 6). Add a CI step that builds the bot and loads `build/app.js` with `login()` stubbed.
 
 
 ## 2. Cyclomatic Complexity
