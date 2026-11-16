@@ -43,6 +43,55 @@ The /upcoming-assignments function cannot properly differentiate between assignm
 
 **Summary:** These are functional issues, and would benefit the end user if fixed. They do not affect the ability for our bot to run, but will affect user experience if not fixed. An issue has been made for this problem.
 
+**Files analyzed:** whole repository (static analysis with ESLint), `src/services/canvasFeed.js`, `src/services/classSchedule.js`, `src/events/*.js`, project configuration
+
+**Method:** I ran ESLint with its recommended rule set over `src/` and `tests/`, then read through the services and event handlers looking for duplicated logic, dead code, and shortcuts left from the bot template. I tested each suspected bug with a script before writing it down.
+
+**Finding 6: ESLint reported 23 errors**
+Running ESLint before any configuration gave 23 errors (`static-analysis/eslint-output-before.txt`, `eslint-screenshot-before.png`). 22 were `no-undef` because ESLint did not know the Node.js (`process`, `Buffer`) and Mocha (`describe`, `it`) globals. The remaining one was real dead code: `getWelcomeMessageWithMeme()` in `guildMemberAdd.js`, left over from the meme-bot template. `getMeme()` was dead too, because that function was its only caller.
+
+Two of the `no-undef` errors point at a deeper issue. `src/` is written as ES modules, but `app.js` uses `__dirname` and `loadEvents.js` uses `require()`, which only exist in CommonJS. The bot only runs because `npm start` first converts everything to CommonJS with esbuild. Declaring the Node globals makes ESLint pass, but it also hides this.
+
+**Resolved in this PR (closes issues #30 and #31):** added `eslint.config.mjs` with Node and Mocha globals and a `npm run lint` script, and removed the unused meme code (`getWelcomeMessageWithMeme()` and `getMeme()`, plus `MEME_URL` from `.env-sample` and the class diagram). In test files, unused function parameters are allowed, because the Discord mocks copy real method signatures. ESLint now reports 0 problems (`static-analysis/eslint-output-after.txt`).
+
+**Recommendation:** Replace `require()` and `__dirname` with ES-module equivalents (`import()`, `import.meta.url`), and run `npm run lint` in CI.
+
+**Finding 7: `/missing` finds no assignments in a real Canvas feed**
+`/missing` worked with the test feed but reported "No missing assignments" for a real UW Canvas feed. There were two causes in `isAssignmentEvent()` and `getCanvasURL()`:
+- A real feed does not put `Assignment:` in front of assignment titles. The only reliable marker is the UID, `event-assignment-<id>`.
+- A real feed writes the link as `URL;VALUE=URI:...`. node-ical turns that into an object (`{ params, val }`), so `String(event.url)` becomes `"[object Object]"`, and the URL check never matches.
+
+**Resolved in this PR:** assignments are now detected by UID as well, the URL object is unwrapped, and the calendar-page link (`calendar?include_contexts=course_<c>#assignment_<a>`) is turned into a direct `https://canvas.uw.edu/courses/<c>/assignments/<a>` link. Links to any other host are still dropped. A link with a port or a username is now rejected too, matching `validateFeedURL()`. Seven regression tests use the real feed format (`tests/missingRealFeed.spec.js`). The first four were written before the fix, and three of them failed on the old code.
+
+**Finding 8: Duplicated feed and assignment logic in `canvasFeed.js`**
+`getUpcomingEvents()` and `fetchMissingAssignmentsCalendar()` contain the same download and validation code. The rule for "is this an assignment" is also written twice: inline in `getUpcomingEvents()`, and in `isAssignmentEvent()`. The second copy was added with `/missing` to avoid changing shared code. Finding 7 shows the cost: the bug existed in both copies, and the fix above only covers `/missing`. `getUpcomingEvents({ excludeAssignments: true })` still cannot recognize assignments in a real feed, which is part of issue #36.
+
+**Recommendation:** Keep one `fetchCalendar()` and one `isAssignmentEvent()` and use them from both functions.
+
+**Finding 9: Two different `safeText()` functions**
+`interactionCreate.js` and `classSchedule.js` each define `safeText()` with different rules: only the second one removes `@`. Neither removes `[`, `]`, `(` and `)`, which lets Discord masked links through (see Threat T3 in Section 5).
+
+**Recommendation:** Move one sanitizer into a shared helper, test it once, and use it for every piece of text that comes from a calendar.
+
+**Finding 10: Long `/schedule` and `/upcoming-assignments` replies fail**
+Both commands add every event to a single message with no length limit. With 15 events in the window, the replies were 2,169 and 2,182 characters long, and Discord rejects messages over 2,000. The `catch` block then tells the user to "check your feed connection", which sends them looking for the wrong problem. `/missing` and `/classes` already cut their output to fit.
+
+**Recommendation:** Cap the list like `formatMissingAssignments()` does ("…and N more"), and share that formatter between the two commands (this also covers Finding 2).
+
+**Finding 11: Leftovers from the template and out-of-date help**
+- `!help` lists only `!help` and an "Assignment Reminder" feature that is not merged (PR #38 is still open). None of the seven slash commands are mentioned.
+- `package.json` is still named `memebot_discord`, with the description "demo project for teaching how to build a discord bot".
+- `.github/workflows/build-and-deploy.yml` pushes an image called `memebot:latest` from a `release` branch, using old action versions (`checkout@v2`, `docker/*@v1`/`@v2`).
+- `Dockerfile` uses `node:18`, which reached end of life in April 2025.
+- `ready.js` logs "Registered /ping" after registering all seven commands.
+
+**Recommendation:** Update `!help` from the registered command list, and rename or remove the template pieces.
+
+**Finding 12: Most tests do not run automatically, and coverage fails on Windows**
+CI (`ci.yml`) only runs `npm run test:smoke`. The 52 unit tests in `tests/*.spec.js`, including the `/missing` regression tests, and ESLint only run when someone remembers to run them by hand. Also, `npm run test:coverage` fails on Windows with `spawn npx ENOENT`, because `scripts/coverage.mjs` starts `npx` without a shell.
+
+**Recommendation:** Add an `npm test` step to `ci.yml`, and a `npm run lint` step on one Node version of 22 or later (ESLint 10 does not support the Node 18.16.0 entry in the CI matrix). Spawn with `shell: true` (or call c8 through Node) in `coverage.mjs`.
+
 
 ## 2. Cyclomatic Complexity
 
@@ -128,7 +177,101 @@ These gaps highlight opportunities for further testing. Discord event handlers a
 - Statement coverage across the entire codebase improved by approximately 42% relative to baseline, while service-layer coverage increased from 27.04% to 45.90%
 - Reported branch coverage reached 85.98%, although significant portions of the codebase remain untested
 
-## 5. Unit Testing
+## 5. Threat Model
+
+**Objective:** Find out what a malicious user, a bad input, or an ordinary mistake could do to Calendeers and the students who use it, check which of those risks are real, and rank what should be fixed first.
+
+**Method:**
+- Listed the assets the bot holds and drew the trust boundaries the data crosses.
+- Went through each boundary with the STRIDE categories (Spoofing, Tampering, Repudiation, Information disclosure, Denial of service, Elevation of privilege).
+- Tested every threat that could be run locally with a script. The script used mocked Discord interactions, a local HTTP server serving test `.ics` files, and a throwaway encryption key, so no real Canvas data or Discord account was involved. Threats that could not be run are marked "code review".
+- Checked dependencies with `npm audit` and searched the git history for committed secrets.
+
+### Assets
+
+| Asset | Where it lives | Why it matters |
+|---|---|---|
+| Canvas calendar feed URL | `data/calendar-links.json`, AES-256-GCM encrypted | The URL contains a secret token. Anyone who has it can read the student's whole Canvas calendar without logging in. |
+| Register.UW class schedule | `data/class-schedules.json`, encrypted | Class times and rooms show where a student is during the week. |
+| Completed-assignment IDs | `data/completed-assignments.json`, plain JSON | Canvas assignment IDs only; low value. |
+| `TOKEN`, `CALENDAR_ENCRYPTION_KEY` | `.env` (git-ignored) | The token gives full control of the bot; the key decrypts every stored feed URL and schedule. |
+| Bot availability | the running Node.js process | One process serves every user and every server. |
+
+### Data flow and trust boundaries
+
+```mermaid
+flowchart LR
+    subgraph Untrusted["Untrusted input"]
+        U["Discord user: slash commands, modal text, .ics upload"]
+        G["People who can add events to a calendar in the student's feed"]
+    end
+    D["Discord API and CDN"]
+    C["canvas.uw.edu calendar feed"]
+    subgraph Host["Bot host (Codespaces)"]
+        B["Calendeers process"]
+        F[("data/*.json")]
+        E[".env: TOKEN, encryption key"]
+        L["Console logs"]
+    end
+    U -->|"TB1: interactions"| D
+    D -->|"TB1"| B
+    D -->|"TB2: attachment download"| B
+    B -->|"TB3: HTTPS GET with secret URL"| C
+    G -.->|"event titles"| C
+    B --> F
+    E --> B
+    B --> L
+```
+
+- **TB1:** Everything in an interaction (command options, modal text, select-menu values) comes from the user.
+- **TB2:** The uploaded `.ics` file is fully controlled by the user.
+- **TB3:** The feed is fetched from Canvas, but event titles in it are written by other people: instructors, and in courses that use Canvas groups, other group members.
+
+### Threats
+
+| ID | STRIDE | Threat | How it was checked | Status | Risk |
+|---|---|---|---|---|---|
+| T1 | Denial of service | **Any uncaught error in an event handler crashes the whole bot.** The discord.js client is created with `captureRejections: true`, so a rejected handler promise is re-emitted as an `error` event. Calendeers registers no `error` listener, so Node throws and the process exits. Two easy triggers: (a) a member joins a server that has no channel named `CHANNEL_NAME` (`guildMemberAdd.js:13`, `channel` is `undefined`); (b) a data file is unreadable or corrupted and someone runs `/disconnect`, which has no `try/catch`. | Reproduced: both triggers, and a bare discord.js `Client` with a throwing listener, ended with exit code 1. | Open | **High** |
+| T2 | Information disclosure | **The secret feed URL is written to the logs.** Every `catch` in `interactionCreate.js` calls `console.error(..., error)`. For an Axios error, that prints `config.url`, the full feed URL with its token. Anyone who can read the host's console, such as Codespace collaborators or a future hosting provider's log viewer, can then read that student's calendar. | Reproduced: a failed `/schedule` printed `url: '.../user_SECRETTOKEN123.ics'`. | Open | **Medium** |
+| T3 | Spoofing | **Masked links in event titles.** `safeText()` removes `` ` * _ ~ \| < > `` but not `[ ] ( )`, so a title like `[Resubmit on Canvas](https://phish.example)` shows up as a clickable link with fake text in `/schedule`, `/upcoming-assignments` and `/missing`. The title can be written by anyone who adds events to a calendar in the student's feed (TB3). | Reproduced: `formatMissingAssignments()` kept the masked link. Who can add group events was checked against Canvas behavior, not with a live account. | Open | Medium-Low |
+| T4 | Denial of service | **Long replies fail** (Finding 10). This one does not need an attacker: a normal week with about 15 events breaks `/schedule` and `/upcoming-assignments`, and the error message names the wrong cause. | Reproduced: 2,169 and 2,182 characters, over Discord's 2,000 limit. | Open | Medium |
+| T5 | Denial of service | **Command spam.** There is no per-user cooldown. Each `/schedule`, `/upcoming-assignments` and `/missing` downloads up to 1 MB from Canvas, and `/connect` downloads two files. Discord's own rate limits only partly cover this. | Code review | Open | Low |
+| T6 | Denial of service | **Malicious recurrence rules in an `.ics` file** (for example `RRULE:FREQ=SECONDLY`). | Reproduced: node-ical stops after 10,000 occurrences and throws (219 ms), and the command's `catch` handles it. `parseClassSchedule()` never expands rules (2 ms). | Mitigated by node-ical | Low |
+| T7 | Tampering / SSRF | **Making the bot fetch an arbitrary URL.** `validateFeedURL()` only accepts `https://canvas.uw.edu/feeds/calendars/user_*.ics` with no port, credentials, query or fragment. Requests use `maxRedirects: 0` and a size cap. Uploads must come from Discord's CDN hosts, end in `.ics`, and be at most 512 KB. | Fuzzer (Section 6), unit tests (Section 7) | Mitigated | Low |
+| T8 | Information disclosure | **Stored data read from disk.** Feed URLs and schedules are encrypted with AES-256-GCM using a random IV per record. Files are created with mode `0600` in a `0700` directory. The key has never been committed (`git log -S` only finds the placeholder in `.env-sample`). The remaining risk: the key sits on the same host as the data, so a full host compromise exposes both, and there is no way to rotate the key. | Code review, git history | Mitigated | Low |
+| T9 | Elevation of privilege | **Reading another user's data.** Every record is keyed by `interaction.user.id`, which comes from Discord. No command takes another user's ID, and replies are ephemeral. Separately, the bot asks for the privileged `MessageContent` intent only to answer `!help`, which is more access than it needs. | Code review | Mitigated (least-privilege gap) | Low |
+| T10 | Repudiation | **No record of actions.** The bot logs only errors, so there is no record of who connected or disconnected a calendar, or when. | Code review | Accepted for a class project | Low |
+| T11 | Tampering (supply chain) | **Vulnerable dependencies.** `npm audit --omit=dev` reports 0 vulnerabilities. The full audit reports 7 (6 moderate, 1 high) in test tooling only (`glob`, `minimatch` and `serialize-javascript` under mocha and c8). These are not installed in the production Docker image (`npm ci --omit=dev`). | `npm audit` | Mitigated | Low |
+
+### Priorities
+
+1. **T1, crash on any handler error.** One member joining one server takes the bot offline everywhere until someone restarts it by hand. The fix is small: register a `client.on("error", ...)` handler, wrap every handler in `try/catch`, and check that the welcome channel exists before sending.
+2. **T2, feed URL in logs.** Log `error.message` or `error.code` instead of the whole error object, and never log a request URL.
+3. **T4, long replies.** This affects ordinary users every week. Fix it together with Finding 2 through a shared, length-limited formatter.
+4. **T3, masked links.** Escape `[ ] ( )` in one shared `safeText()` (Finding 9).
+5. **T5 and T9.** Add a short per-user cooldown on commands that fetch from Canvas, and drop the `MessageContent` intent by turning `!help` into a `/help` slash command.
+
+**Key Findings: Threat Model:** The input boundaries are the strongest part of the bot: URL validation, upload checks, size limits, and encryption at rest all held up when tested. The weak spots are on the operations side. Unhandled errors take the whole process down, and the most sensitive value the bot holds, the feed URL, can end up in plain text in the logs. Neither problem needs a skilled attacker: T1 can be triggered just by joining a server.
+
+**Testing Gaps & Future Recommendations:**
+- All tests used mocked Discord interactions and a local feed server. T1 and T4 should be confirmed against the live Discord API with a test bot.
+- Whether students can add events to a calendar that appears in a classmate's feed (T3) should be confirmed with a real Canvas group.
+- After the T1 fix, add regression tests that run the event handlers with a missing channel and a corrupted data file.
+
+## 6. Fuzzer
+
+**Objective:** Generate random links to break the canvasFeed.js to ensure no malicious links or false links being used.
+
+**Implementation:** Created src/fuzz/fuzz-test.js using fast-check library. Fuzzer generates 1000 random links each for valid canvas calendar, untrusted hosts, and URL query string and fragments.
+
+**Result:** All random links are successfully filtered. Valid canvas URLs are processed, and the other links are rejected.
+
+**Testing Gaps & Future Recommendations:**
+- Fuzzer test is recommended to be implemented across this project to reduce the risk of mis-use and to prevent bugs.
+- Limited URL Variations; Only 3 types of links are generated for this test. More variations can be generated to further test the filtering function.
+- The fuzzer only tests validateFeedURL(). It does not test whether canvasFeed.js can safely handle corrupted, incomplete, or malicious .ics calendar data.
+
+## 7. Unit Testing
 
 **Objective:** Implement comprehensive unit tests for untested or undertested functionality.
 
@@ -188,18 +331,54 @@ Overall, the 27 new unit tests improve confidence in Calendeers' Canvas URL vali
 - Mock-based tests for `calendarStore.js` file operations would improve storage-layer coverage
 - Mock-based tests for API calls in `canvasFeed.js` would reach currently uncovered network paths
 
-## 6. Fuzzer
+### Additional Unit Tests: Real Canvas Feeds and Schedule Inputs
 
-**Objective:** Generate random links to break the canvasFeed.js to ensure no malicious links or false links being used.
+**Objective:** Cover code that the tests above do not reach: `/missing` with the format a real Canvas feed uses, the checks on uploaded schedule files, and the `/classes` formatter.
 
-**Implementation:** Created src/fuzz/fuzz-test.js using fast-check library. Fuzzer generates 1000 random links each for valid canvas calendar, untrusted hosts, and URL query string and fragments.
+**Implementation:** 17 unit tests in two new files.
 
-**Result:** All random links are successfully filtered. Valid canvas URLs are processed, and the other links are rejected.
+`tests/missingRealFeed.spec.js`, `findMissingAssignments()` with a real-format feed (7 tests):
+- Detects an assignment from its `event-assignment-<id>` UID when the title has no `Assignment:` prefix.
+- Does not treat a regular `event-calendar-event-<id>` as an assignment.
+- Builds a direct `courses/<c>/assignments/<a>` link from the `URL;VALUE=URI` object.
+- Drops a link whose host only looks like Canvas (`canvas.uw.edu.example.com`).
+- Drops a Canvas link that has a port or a username.
+- Keeps the calendar-page link when it cannot be turned into an assignment link (more than one course context).
+- Still detects assignments by `Assignment:` title prefix or `/quizzes/` URL when the UID is generic. Before this test, every fixture had an `event-assignment-` UID, so those two checks were untested.
+
+`tests/classScheduleInputs.spec.js`, `downloadScheduleFile()` input checks (5 tests). Every case is rejected before any network request, and `axios.get` is replaced with a function that fails the test if a request is ever made:
+- Rejects a non-`.ics` file.
+- Rejects a host outside Discord's CDN.
+- Rejects a look-alike host (`cdn.discordapp.com.evil.example.com`).
+- Rejects a file over 512 KB.
+- Rejects a malformed attachment URL.
+
+`tests/classScheduleInputs.spec.js`, `formatClassSchedule()` (5 tests):
+- 12-hour times, including 12:00 AM and 12:00 PM.
+- Joined meeting days and the location.
+- "1 class" versus "2 classes".
+- Removes Markdown and mention characters (`**`, `@everyone`, `<@id>`, backticks).
+- Stays under Discord's 2,000-character limit for long schedules.
+
+**Checking that the tests can fail:**
+- The first four real-feed tests were written before the `/missing` fix (Section 1, Finding 7); three of them failed on the old code.
+- For the schedule tests, I temporarily broke the code under test: allowed any host that starts with a CDN name, doubled the size limit, and stopped removing `@`. The matching tests failed each time, and the code was then restored.
+
+**Results:** All 52 unit tests and all 25 smoke tests pass. Measured with c8 over `src/` (excluding the fuzzer), before and after this change:
+
+| Metric | Before | After |
+|---|---|---|
+| Statements | 28.53% | 34.30% |
+| Functions | 20.93% | 31.81% |
+| `classSchedule.js` statements | 60.67% | 88.76% |
+| `canvasFeed.js` statements | 45.11% | 51.23% |
+
+**Key Findings: Additional Unit Tests:** The `/missing` bug got through review and testing because every test feed was written by hand to match what we assumed Canvas sends. Tests built from the real feed format would have caught it before release.
 
 **Testing Gaps & Future Recommendations:**
-- Fuzzer test is recommended to be implemented across this project to reduce the risk of mis-use and to prevent bugs.
-- Limited URL Variations; Only 3 types of links are generated for this test. More variations can be generated to further test the filtering function.
-- The fuzzer only tests validateFeedURL(). It does not test whether canvasFeed.js can safely handle corrupted, incomplete, or malicious .ics calendar data.
+- `getUpcomingEvents()` and `getMissingAssignments()` still have no tests for their network path. Serving fixtures from a local HTTP server, as the threat-model script did, would cover them without calling Canvas.
+- Once the T1 fix is in, add tests for handler error paths (missing welcome channel, corrupted data file).
+
 
 ## 8. Smoke Testing
 
@@ -314,4 +493,3 @@ Although Continuous Deployment remains future work, the existing CI pipeline pro
  - Introduce Continuous Deployment once a permanent hosting environment is available.
  - Add automated deployment health checks to verify successful bot restarts and Discord connections.
 ---
-
