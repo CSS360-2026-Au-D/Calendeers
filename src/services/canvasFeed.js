@@ -145,23 +145,50 @@ async function fetchMissingAssignmentsCalendar(feedURL) {
     return ical.sync.parseICS(text);
 }
 
+// node-ical parses "URL;VALUE=URI:..." (the form real Canvas feeds use) into
+// { params, val } rather than a plain string.
+function getEventURL(event) {
+    const value = event.url;
+    return String((typeof value === "object" && value ? value.val : value) || "");
+}
+
+// Real Canvas feeds mark assignments (and quizzes) only through the UID
+// "event-assignment-<id>"; the title and URL checks cover other feed shapes.
 function isAssignmentEvent(event) {
+    const id = String(event.uid || "");
     const title = String(event.summary || "");
-    const eventURL = String(event.url || "");
 
     return (
+        /^event-assignment-/i.test(id) ||
         /^assignment\s*:/i.test(title) ||
-        /\/(?:assignments|quizzes)\//i.test(eventURL)
+        /\/(?:assignments|quizzes)\//i.test(getEventURL(event))
     );
 }
 
 // Only link back to Canvas itself, never to an arbitrary URL from the feed.
+// A real feed points at the calendar page
+// (calendar?include_contexts=course_<c>#assignment_<a>), so turn that into a
+// direct link to the assignment.
 function getCanvasURL(event) {
     try {
-        const url = new URL(String(event.url || ""));
-        return url.protocol === "https:" && url.hostname === "canvas.uw.edu"
-            ? url.toString()
-            : "";
+        const url = new URL(getEventURL(event));
+
+        if (
+            url.protocol !== "https:" ||
+            url.hostname !== "canvas.uw.edu" ||
+            url.port ||
+            url.username ||
+            url.password
+        ) {
+            return "";
+        }
+
+        const course = /^course_(\d+)$/.exec(url.searchParams.get("include_contexts") || "")?.[1];
+        const assignment = /^#assignment_(\d+)$/.exec(url.hash)?.[1];
+
+        return course && assignment
+            ? `https://canvas.uw.edu/courses/${course}/assignments/${assignment}`
+            : url.toString();
     } catch {
         return "";
     }
