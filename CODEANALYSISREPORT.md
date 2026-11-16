@@ -52,7 +52,7 @@ Running ESLint before any configuration gave 23 errors (`static-analysis/eslint-
 
 Two of the `no-undef` errors point at a deeper issue. `src/` is written as ES modules, but `app.js` uses `__dirname` and `loadEvents.js` uses `require()`, which only exist in CommonJS. The bot only runs because `npm start` first converts everything to CommonJS with esbuild. Declaring the Node globals makes ESLint pass, but it also hides this.
 
-**Resolved in this PR (closes issues #30 and #31):** added `eslint.config.mjs` with Node and Mocha globals and a `npm run lint` script, and removed the unused meme code (`getWelcomeMessageWithMeme()` and `getMeme()`, plus `MEME_URL` from `.env-sample` and the class diagram). In test files, unused function parameters are allowed, because the Discord mocks copy real method signatures. ESLint now reports 0 problems (`static-analysis/eslint-output-after.txt`).
+**Resolved in this PR (closes issues [#30](https://github.com/CSS360-2026-Au-D/Calendeers/issues/30) and [#31](https://github.com/CSS360-2026-Au-D/Calendeers/issues/31)):** added `eslint.config.mjs` with Node and Mocha globals and a `npm run lint` script, and removed the unused meme code (`getWelcomeMessageWithMeme()` and `getMeme()`, plus `MEME_URL` from `.env-sample` and the class diagram). In test files, unused function parameters are allowed, because the Discord mocks copy real method signatures. ESLint now reports 0 problems (`static-analysis/eslint-output-after.txt`).
 
 **Recommendation:** Replace `require()` and `__dirname` with ES-module equivalents (`import()`, `import.meta.url`), and run `npm run lint` in CI.
 
@@ -61,7 +61,7 @@ Two of the `no-undef` errors point at a deeper issue. `src/` is written as ES mo
 - A real feed does not put `Assignment:` in front of assignment titles. The only reliable marker is the UID, `event-assignment-<id>`.
 - A real feed writes the link as `URL;VALUE=URI:...`. node-ical turns that into an object (`{ params, val }`), so `String(event.url)` becomes `"[object Object]"`, and the URL check never matches.
 
-**Resolved in this PR:** assignments are now detected by UID as well, the URL object is unwrapped, and the calendar-page link (`calendar?include_contexts=course_<c>#assignment_<a>`) is turned into a direct `https://canvas.uw.edu/courses/<c>/assignments/<a>` link. Links to any other host are still dropped. A link with a port or a username is now rejected too, matching `validateFeedURL()`. Seven regression tests use the real feed format (`tests/missingRealFeed.spec.js`). The first four were written before the fix, and three of them failed on the old code.
+**Resolved in this PR (user story [#52](https://github.com/CSS360-2026-Au-D/Calendeers/issues/52)):** assignments are now detected by UID as well, the URL object is unwrapped, and the calendar-page link (`calendar?include_contexts=course_<c>#assignment_<a>`) is turned into a direct `https://canvas.uw.edu/courses/<c>/assignments/<a>` link. Links to any other host are still dropped. A link with a port or a username is now rejected too, matching `validateFeedURL()`. Seven regression tests use the real feed format (`tests/missingRealFeed.spec.js`). The first four were written before the fix, and three of them failed on the old code.
 
 **Finding 8: Duplicated feed and assignment logic in `canvasFeed.js`**
 `getUpcomingEvents()` and `fetchMissingAssignmentsCalendar()` contain the same download and validation code. The rule for "is this an assignment" is also written twice: inline in `getUpcomingEvents()`, and in `isAssignmentEvent()`. The second copy was added with `/missing` to avoid changing shared code. Finding 7 shows the cost: the bug existed in both copies, and the fix above only covers `/missing`. `getUpcomingEvents({ excludeAssignments: true })` still cannot recognize assignments in a real feed, which is part of issue #36.
@@ -76,7 +76,7 @@ Two of the `no-undef` errors point at a deeper issue. `src/` is written as ES mo
 **Finding 10: Long `/schedule` and `/upcoming-assignments` replies fail**
 Both commands add every event to a single message with no length limit. With 15 events in the window, the replies were 2,169 and 2,182 characters long, and Discord rejects messages over 2,000. The `catch` block then tells the user to "check your feed connection", which sends them looking for the wrong problem. `/missing` and `/classes` already cut their output to fit.
 
-**Recommendation:** Cap the list like `formatMissingAssignments()` does ("…and N more"), and share that formatter between the two commands (this also covers Finding 2).
+**Recommendation:** Cap the list like `formatMissingAssignments()` does ("…and N more"), and share that formatter between the two commands (this also covers Finding 2 and issue [#41](https://github.com/CSS360-2026-Au-D/Calendeers/issues/41)).
 
 **Finding 11: Leftovers from the template and out-of-date help**
 - `!help` lists only `!help` and an "Assignment Reminder" feature that is not merged (PR #38 is still open). None of the seven slash commands are mentioned.
@@ -98,7 +98,7 @@ Telling Node that `build/` is CommonJS is not enough on its own. With `"type": "
 
 CI did not catch this because it only runs the smoke tests through esbuild-runner. It never runs `npm run build` or loads the built bot.
 
-**Recommendation:** Remove `"type": "module"` and rename `src/fuzz/fuzz-test.js` to `.mjs`, or move the whole project to native ES modules and drop the CommonJS build (see Finding 6). Add a CI step that builds the bot and loads `build/app.js` with `login()` stubbed.
+**Recommendation:** Remove `"type": "module"` and rename `src/fuzz/fuzz-test.js` to `.mjs`, or move the whole project to native ES modules and drop the CommonJS build (see Finding 6). Add a CI step that builds the bot and loads `build/app.js` with `login()` stubbed. User story: [#53](https://github.com/CSS360-2026-Au-D/Calendeers/issues/53).
 
 
 ## 2. Cyclomatic Complexity
@@ -253,7 +253,7 @@ flowchart LR
 
 ### Priorities
 
-1. **T1, crash on any handler error.** One member joining one server takes the bot offline everywhere until someone restarts it by hand. The fix is small: register a `client.on("error", ...)` handler, wrap every handler in `try/catch`, and check that the welcome channel exists before sending.
+1. **T1, crash on any handler error (user story [#54](https://github.com/CSS360-2026-Au-D/Calendeers/issues/54)).** One member joining one server takes the bot offline everywhere until someone restarts it by hand. The fix is small: register a `client.on("error", ...)` handler, wrap every handler in `try/catch`, and check that the welcome channel exists before sending.
 2. **T2, feed URL in logs.** Log `error.message` or `error.code` instead of the whole error object, and never log a request URL.
 3. **T4, long replies.** This affects ordinary users every week. Fix it together with Finding 2 through a shared, length-limited formatter.
 4. **T3, masked links.** Escape `[ ] ( )` in one shared `safeText()` (Finding 9).
