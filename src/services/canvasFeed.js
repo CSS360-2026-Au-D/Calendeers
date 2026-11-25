@@ -84,6 +84,7 @@ export async function getUpcomingEvents(
 
         const title = String(event.summary || "");
         const eventURL = String(event.url || "");
+        const uid = String(event.uid || "");
         const isAssignment =
             /^assignment\s*:/i.test(title) ||
             /\/(?:assignments|quizzes)\//i.test(eventURL) ||
