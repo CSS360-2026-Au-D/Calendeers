@@ -51,21 +51,7 @@ export async function getUpcomingEvents(
          numberOfDays = 14,
         } = {}
 ) {
-    const response = await axios.get(feedURL, {
-        responseType: "text",
-        timeout: 10000,
-        maxRedirects: 0,
-        maxContentLength: 1024 * 1024,
-        headers: { Accept: "text/calendar" }
-    });
-
-    const text = response.data;
-
-    if (typeof text !== "string" || !text.includes("BEGIN:VCALENDAR")) {
-        throw new Error("Invalid calendar feed");
-    }
-
-    const calendar = ical.sync.parseICS(text);
+        const calendar = await fetchMissingAssignmentsCalendar(feedURL);
 
     const now = new Date();
     
@@ -130,22 +116,61 @@ export async function getUpcomingEvents(
 
 // --- Missing assignments ---
 
+export class CanvasFeedError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = "CanvasFeedError";
+    }
+}
+
 async function fetchMissingAssignmentsCalendar(feedURL) {
-    const response = await axios.get(feedURL, {
-        responseType: "text",
-        timeout: 10000,
-        maxRedirects: 0,
-        maxContentLength: 1024 * 1024,
-        headers: { Accept: "text/calendar" }
-    });
+    let response;
+
+    try {
+        response = await axios.get(feedURL, {
+            responseType: "text",
+            timeout: 10000,
+            maxRedirects: 0,
+            maxContentLength: 1024 * 1024,
+            headers: { Accept: "text/calendar" }
+        });
+    } catch (error) {
+        if (error.code === "ECONNABORTED" ||
+            error.code === "ETIMEDOUT") {
+            throw new CanvasFeedError(
+                "Canvas connection timed out. Please try again."
+            );
+        }
+
+        throw new CanvasFeedError(
+            "Unable to connect to Canvas. Please try again."
+        );
+    }
 
     const text = response.data;
 
-    if (typeof text !== "string" || !text.includes("BEGIN:VCALENDAR")) {
-        throw new Error("Invalid calendar feed");
+    if (text == null ||
+        (typeof text === "string" && !text.trim())) {
+        throw new CanvasFeedError(
+            "Canvas returned an empty response."
+        );
     }
 
-    return ical.sync.parseICS(text);
+    if (typeof text !== "string" ||
+        !text.includes("BEGIN:VCALENDAR") ||
+        !text.includes("END:VCALENDAR")) {
+        throw new CanvasFeedError(
+            "Invalid calendar feed. Please check your Canvas URL."
+        );
+    }
+
+    try {
+        return ical.sync.parseICS(text);
+    } catch {
+        throw new CanvasFeedError(
+            "Unable to read the Canvas calendar."
+        );
+    }
 }
 
 // function isAssignmentEvent(event) {
