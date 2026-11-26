@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "this is a demo project for teaching how to build a discord bot",
   "type": "module",
+  "engines": {
+    "node": ">=26 <27"
+  },
   "scripts": {
     "build": "rm -rf build && esbuild src/*.js src/**/*.js --platform=node --format=cjs  --outdir=build --outbase=src && echo '{\"type\":\"commonjs\"}' > build/package.json",
     "start": "npm run build && node -r dotenv/config build/app.js",
