@@ -47,9 +47,10 @@ function getTomorrowDateKey(now) {
 export async function getUpcomingEvents(
     feedURL,
     { excludeAssignments = false,
-         tomorrowOnly = false, 
-         numberOfDays = 14,
-        } = {}
+      tomorrowOnly = false,
+      numberOfDays = 14,
+      now = new Date(),
+    } = {}
 ) {
     const response = await axios.get(feedURL, {
         responseType: "text",
@@ -67,7 +68,6 @@ export async function getUpcomingEvents(
 
     const calendar = ical.sync.parseICS(text);
 
-    const now = new Date();
     
     if (!Number.isInteger(numberOfDays) || numberOfDays < 1) {
         throw new Error("numberOfDays must be a positive integer");
@@ -124,8 +124,8 @@ export async function getUpcomingEvents(
         }
     }
 
-    const sorted = upcoming.sort((a, b) => a.start - b.start);
-    return tomorrowOnly ? sorted : sorted;
+            const sorted = upcoming.sort((a, b) => a.start - b.start);
+    return sorted;
 }
 
 // --- Missing assignments ---
