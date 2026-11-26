@@ -24,7 +24,8 @@ import {
 import {
   validateFeedURL,
   getUpcomingEvents,
-  getMissingAssignments
+  getMissingAssignments,
+  CanvasFeedError
 } from "../services/canvasFeed.js";
 
 import {
@@ -215,9 +216,10 @@ const event = {
         } catch (error) {
           console.error("Failed to load schedule:", error);
           await interaction.editReply(
-            "Unable to load your Canvas calendar. " +
-            "Please check your feed connection."
-          );
+  error instanceof CanvasFeedError
+    ? error.message
+    : "Unable to load your Canvas calendar. Please check your feed connection."
+);
         }
 
         return;
@@ -273,9 +275,10 @@ const event = {
             console.error("Failed to load upcoming assignments:", error);
 
             await interaction.editReply(
-                "Unable to retrieve your upcoming assignments. " +
-                "Please check your Canvas connection."
-            );
+  error instanceof CanvasFeedError
+    ? error.message
+    : "Unable to retrieve your upcoming assignments. Please check your Canvas connection."
+);
         }
 
         return;
@@ -317,9 +320,10 @@ const event = {
         } catch (error) {
           console.error("Failed to load missing assignments:", error);
           await interaction.editReply(
-            "Unable to check your missing assignments. " +
-            "Please check your Canvas connection."
-          );
+  error instanceof CanvasFeedError
+    ? error.message
+    : "Unable to check your missing assignments. Please check your Canvas connection."
+);
         }
 
         return;
@@ -421,7 +425,7 @@ const event = {
       } catch (error) {
         console.error("Failed to connect calendar:", error);
         await interaction.editReply(
-          error instanceof ScheduleError
+          error instanceof ScheduleError || error instanceof CanvasFeedError
             ? `❌ ${error.message}`
             : "❌ Could not connect your calendars. " +
               "Make sure you're using a valid UW Canvas Calendar Feed URL " +
