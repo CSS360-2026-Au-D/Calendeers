@@ -13,12 +13,14 @@ let isRunning = false;
 /**
  * Build the Discord reminder message.
  */
-function createReminderMessage(assignment) {
+export function createReminderMessage(assignment) {
   const days = assignment.daysBefore;
 
-  // Remove Discord formatting and mention characters
-  // from untrusted assignment titles.
   const title = assignment.title
+    .replace(/[\r\n`*_~|<>@]/g, " ")
+    .slice(0, 120);
+
+  const course = (assignment.courseName || "")
     .replace(/[\r\n`*_~|<>@]/g, " ")
     .slice(0, 120);
 
@@ -32,19 +34,20 @@ function createReminderMessage(assignment) {
       )
     : `<t:${Math.floor(assignment.due / 1000)}:F>`;
 
-  const deadlineText = days === 1
-    ? "Due TOMORROW!"
-    : `Due in ${days} days!`;
+  const timeRemaining = days === 1
+    ? "Tomorrow"
+    : `${days} days`;
 
   return (
-    `🔔 **Assignment Reminder!**\n\n` +
-    `📚 **${title}**\n` +
-    `⏰ **${deadlineText}**\n` +
-    `📅 Deadline: ${dueDate}\n` +
+    `🔔 **Assignment Reminder**\n\n` +
+    `📚 **Assignment:** ${title}\n` +
+    (course ? `🎓 **Course:** ${course}\n` : "") +
+    `📅 **Due:** ${dueDate}\n` +
+    `⏳ **Time remaining:** ${timeRemaining}\n` +
     (assignment.url
-      ? `🔗 ${assignment.url}\n`
+      ? `🔗 **Assignment link:** ${assignment.url}\n`
       : "") +
-    `\nGood luck with your assignment! 🦌`
+    `\nGood luck! 🦌`
   );
 }
 
